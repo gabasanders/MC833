@@ -72,8 +72,6 @@ int main(void) {
             printf("local: %s:%hu\n",remoteip, remoteport);
         }
 
-
-
         // envia banner "Hello + Time"
         char buf[MAXDATASIZE];
         time_t ticks = time(NULL); // ctime() já inclui '\n'

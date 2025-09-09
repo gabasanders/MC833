@@ -82,6 +82,13 @@ int main(int argc, char **argv) {
         printf("remote: %s:%hu\n",localip, localport);
     }
 
+    // le o input do usuario
+    char user_input[MAXLINE + 1];
+    printf("Reading user input\n");
+    if (fgets(user_input, MAXLINE + 1, stdin) != NULL) {
+
+    }
+
 
     // lê e imprime o banner (uma leitura basta neste cenário)
     char banner[MAXLINE + 1];

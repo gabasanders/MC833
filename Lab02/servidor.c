@@ -12,6 +12,8 @@
 #define LISTENQ      10
 #define MAXDATASIZE  256
 
+#define MAXLINE 4096
+
 int main(void) {
     int listenfd, connfd;
     struct sockaddr_in servaddr;
@@ -77,6 +79,12 @@ int main(void) {
         time_t ticks = time(NULL); // ctime() já inclui '\n'
         snprintf(buf, sizeof(buf), "Hello from server!\nTime: %.24s\r\n", ctime(&ticks));
         (void)write(connfd, buf, strlen(buf));
+
+        // le o input vindo do cliente
+        char client_input[MAXLINE + 1];
+        read(connfd, client_input, MAXLINE);
+
+        printf("[CLI MSG] %s", client_input);
 
         close(connfd); // fecha só a conexão aceita; servidor segue escutando
     }

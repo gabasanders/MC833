@@ -82,13 +82,6 @@ int main(int argc, char **argv) {
         printf("remote: %s:%hu\n",localip, localport);
     }
 
-    // le o input do usuario
-    char user_input[MAXLINE + 1];
-    printf("Reading user input\n");
-    if (fgets(user_input, MAXLINE + 1, stdin) != NULL) {
-
-    }
-
 
     // lê e imprime o banner (uma leitura basta neste cenário)
     char banner[MAXLINE + 1];
@@ -98,6 +91,19 @@ int main(int argc, char **argv) {
         fputs(banner, stdout);
         fflush(stdout);
     }
+
+
+    // le o input do usuario
+    char user_input[MAXLINE + 1];
+    printf("Lendo input do usuario...\n");
+    if (fgets(user_input, MAXLINE + 1, stdin) != NULL) {
+
+    }
+    else {
+        printf("Erro ao ler input");
+    }
+
+    (void)write(sockfd, user_input, MAXLINE+1);
 
     close(sockfd);
     return 0;

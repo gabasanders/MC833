@@ -17,13 +17,29 @@
    Mantêm assinaturas equivalentes e comportamento.
    Pequena conveniência: Read() sempre deixa o buffer terminado em '\0'. */
 int Socket(int domain, int type, int protocol) {
-    return socket(domain, type, protocol);
+    int listenfd;
+    if ((listenfd = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
+        perror("socket");
+        exit(1);
+    }
+    return listenfd;
 }
-int Bind(int sockfd, const struct sockaddr *addr, socklen_t addrlen) {
-    return bind(sockfd, addr, addrlen);
+int Close(int fd) {
+    return close(fd);
 }
-int Listen(int sockfd, int backlog) {
-    return listen(sockfd, backlog);
+void Bind(int sockfd, const struct sockaddr *addr, socklen_t addrlen) {
+    if (bind(sockfd, addr, addrlen) == -1) {
+        perror("bind");
+        Close(sockfd);
+        exit(1);
+    }
+}
+void Listen(int sockfd, int backlog) {
+    if (listen(sockfd, LISTENQ) == -1) {
+        perror("listen");
+        Close(sockfd);
+        exit(1);
+    }
 }
 int Accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen) {
     return accept(sockfd, addr, addrlen);
@@ -44,19 +60,18 @@ ssize_t Read(int fd, void *buf, size_t count) {
             ((char*)buf)[count - 1] = '\0';
         }
     }
+
+    printf("[CLI MSG] %s", (char*)buf);
     return n;
 }
 ssize_t Write(int fd, const void *buf, size_t count) {
     return write(fd, buf, count);
 }
-int Close(int fd) {
-    return close(fd);
-}
 
 void doit(int connfd) {
     struct sockaddr_in remoteaddr;
     socklen_t len = sizeof(remoteaddr);
-    if (Getpeername(connfd, (struct sockaddr*)&remoteaddr, &len) == 0){
+    if (Getpeername(connfd, (struct sockaddr *)&remoteaddr, &len) == 0){
         char remoteip[INET_ADDRSTRLEN];
         unsigned short remoteport;
 
@@ -76,7 +91,6 @@ void doit(int connfd) {
     char client_input[MAXLINE + 1];
     Read(connfd, client_input, MAXLINE);
     
-    printf("[CLI MSG] %s", client_input);
 
     const char* response;
     if (strncmp(client_input, "GET / HTTP/1.0", 14) == 0 ||
@@ -104,10 +118,7 @@ int main(int argc, char *argv[]) {
     struct sockaddr_in servaddr;
 
     // socket
-    if ((listenfd = Socket(AF_INET, SOCK_STREAM, 0)) == -1) {
-        perror("socket");
-        return 1;
-    }
+    listenfd = Socket(AF_INET, SOCK_STREAM, 0);
 
     memset(&servaddr, 0, sizeof(servaddr));
     servaddr.sin_family      = AF_INET;
@@ -120,11 +131,7 @@ int main(int argc, char *argv[]) {
         servaddr.sin_port = 0;              
     }
 
-    if (Bind(listenfd, (struct sockaddr *)&servaddr, sizeof(servaddr)) == -1) {
-        perror("bind");
-        Close(listenfd);
-        return 1;
-    }
+    Bind(listenfd, (struct sockaddr *)&servaddr, sizeof(servaddr));
     
     // Descobrir porta real e divulgar em arquivo server.info
     struct sockaddr_in bound; socklen_t blen = sizeof(bound);
@@ -137,11 +144,7 @@ int main(int argc, char *argv[]) {
     }
 
     // listen
-    if (Listen(listenfd, LISTENQ) == -1) {
-        perror("listen");
-        Close(listenfd);
-        return 1;
-    }
+    Listen(listenfd, LISTENQ);
 
     // laço: aceita clientes, envia banner e fecha a conexão do cliente
     for (;;) {

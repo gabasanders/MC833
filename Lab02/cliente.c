@@ -14,13 +14,20 @@
 
 #define MAXLINE 4096
 
-/* Wrappers (sem inline). Mantêm assinaturas equivalentes.
-   Conveniência: Read() sempre termina o buffer com '\0'. */
 int Socket(int domain, int type, int protocol) {
-    return socket(domain, type, protocol);
+    int sockfd;
+    if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
+        perror("socket");
+        exit(1);
+    }
+    return sockfd;
 }
 int Connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen) {
-    return connect(sockfd, addr, addrlen);
+    if (connect(sockfd, addr, addrlen) < 0) {
+        perror("connect error");
+        Close(sockfd);
+        exit(1);
+    }
 }
 int Getsockname(int sockfd, struct sockaddr *addr, socklen_t *addrlen) {
     return getsockname(sockfd, addr, addrlen);
@@ -34,6 +41,10 @@ ssize_t Read(int fd, void *buf, size_t count) {
             ((char*)buf)[count - 1] = '\0';
         }
     }
+    if (n > 0) {
+        fputs((char*)buf, stdout);
+        fflush(stdout);
+    }
     return n;
 }
 ssize_t Write(int fd, const void *buf, size_t count) {
@@ -46,6 +57,16 @@ int Close(int fd) {
 static inline void addr_to_ip_port(const struct sockaddr_in *sa, char *ip, size_t iplen, unsigned short *port) {
     inet_ntop(AF_INET, &sa->sin_addr, ip, iplen);
     *port = ntohs(sa->sin_port);
+}
+
+int read_input(char *buf) {
+    printf("Lendo input do usuario...\n");
+    if (fgets(buf, MAXLINE + 1, stdin) != NULL) {
+        // ok
+    } else {
+        printf("Erro ao ler input");
+    }
+
 }
 
 int main(int argc, char **argv) {
@@ -77,10 +98,7 @@ int main(int argc, char **argv) {
     }
 
     // socket
-    if ((sockfd = Socket(AF_INET, SOCK_STREAM, 0)) < 0) {
-        perror("socket error");
-        return 1;
-    }
+    sockfd = Socket(AF_INET, SOCK_STREAM, 0);
 
     // connect
     memset(&servaddr, 0, sizeof(servaddr));
@@ -91,11 +109,7 @@ int main(int argc, char **argv) {
         Close(sockfd);
         return 1;
     }
-    if (Connect(sockfd, (struct sockaddr *) &servaddr, sizeof(servaddr)) < 0) {
-        perror("connect error");
-        Close(sockfd);
-        return 1;
-    }
+    Connect(sockfd, (struct sockaddr *) &servaddr, sizeof(servaddr));
 
     struct sockaddr_in localaddr;
     socklen_t len = sizeof(localaddr);
@@ -113,27 +127,15 @@ int main(int argc, char **argv) {
     // lê e imprime o banner (uma leitura basta neste cenário)
     char server_response[MAXLINE + 1];
     ssize_t n = Read(sockfd, server_response, MAXLINE);
-    if (n > 0) {
-        fputs(server_response, stdout);
-        fflush(stdout);
-    }
 
     // lê o input do usuário
     char user_input[MAXLINE + 1];
-    printf("Lendo input do usuario...\n");
-    if (fgets(user_input, MAXLINE + 1, stdin) != NULL) {
-        // ok
-    } else {
-        printf("Erro ao ler input");
-    }
+    read_input(user_input);
 
     (void)Write(sockfd, user_input, MAXLINE + 1);
 
     n = Read(sockfd, server_response, MAXLINE);
-    if (n > 0) {
-        fputs(server_response, stdout);
-        fflush(stdout);
-    }
+    
 
     Close(sockfd);
     return 0;

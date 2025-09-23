@@ -14,6 +14,35 @@
 
 #define MAXLINE 4096
 
+/* Wrappers (sem inline). Mantêm assinaturas equivalentes.
+   Conveniência: Read() sempre termina o buffer com '\0'. */
+int Socket(int domain, int type, int protocol) {
+    return socket(domain, type, protocol);
+}
+int Connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen) {
+    return connect(sockfd, addr, addrlen);
+}
+int Getsockname(int sockfd, struct sockaddr *addr, socklen_t *addrlen) {
+    return getsockname(sockfd, addr, addrlen);
+}
+ssize_t Read(int fd, void *buf, size_t count) {
+    ssize_t n = read(fd, buf, count);
+    if (buf && count > 0) {
+        if (n >= 0 && (size_t)n < count) {
+            ((char*)buf)[n] = '\0';
+        } else {
+            ((char*)buf)[count - 1] = '\0';
+        }
+    }
+    return n;
+}
+ssize_t Write(int fd, const void *buf, size_t count) {
+    return write(fd, buf, count);
+}
+int Close(int fd) {
+    return close(fd);
+}
+
 static inline void addr_to_ip_port(const struct sockaddr_in *sa, char *ip, size_t iplen, unsigned short *port) {
     inet_ntop(AF_INET, &sa->sin_addr, ip, iplen);
     *port = ntohs(sa->sin_port);
@@ -45,11 +74,10 @@ int main(int argc, char **argv) {
             fprintf(stderr, "Uso: %s <IP> [PORT] (ou forneça server.info)\n", argv[0]);
             return 1;
         }
-
     }
 
     // socket
-    if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+    if ((sockfd = Socket(AF_INET, SOCK_STREAM, 0)) < 0) {
         perror("socket error");
         return 1;
     }
@@ -60,18 +88,18 @@ int main(int argc, char **argv) {
     servaddr.sin_port   = htons(port);
     if (inet_pton(AF_INET, ip, &servaddr.sin_addr) <= 0) {
         perror("inet_pton error");
-        close(sockfd);
+        Close(sockfd);
         return 1;
     }
-    if (connect(sockfd, (struct sockaddr *) &servaddr, sizeof(servaddr)) < 0) {
+    if (Connect(sockfd, (struct sockaddr *) &servaddr, sizeof(servaddr)) < 0) {
         perror("connect error");
-        close(sockfd);
+        Close(sockfd);
         return 1;
     }
 
     struct sockaddr_in localaddr;
     socklen_t len = sizeof(localaddr);
-    if(getsockname(sockfd, (struct sockaddr*)&localaddr, &len) == 0){
+    if (Getsockname(sockfd, (struct sockaddr*)&localaddr, &len) == 0){
         char localip[INET_ADDRSTRLEN];
         unsigned short localport;
 
@@ -79,32 +107,34 @@ int main(int argc, char **argv) {
         inet_ntop(AF_INET, &(localaddr.sin_addr), localip, sizeof(localip));
         localport = ntohs(localaddr.sin_port);
 
-        printf("remote: %s:%hu\n",localip, localport);
+        printf("remote: %s:%hu\n", localip, localport);
     }
 
-
     // lê e imprime o banner (uma leitura basta neste cenário)
-    char banner[MAXLINE + 1];
-    ssize_t n = read(sockfd, banner, MAXLINE);
+    char server_response[MAXLINE + 1];
+    ssize_t n = Read(sockfd, server_response, MAXLINE);
     if (n > 0) {
-        banner[n] = 0;
-        fputs(banner, stdout);
+        fputs(server_response, stdout);
         fflush(stdout);
     }
 
-
-    // le o input do usuario
+    // lê o input do usuário
     char user_input[MAXLINE + 1];
     printf("Lendo input do usuario...\n");
     if (fgets(user_input, MAXLINE + 1, stdin) != NULL) {
-
-    }
-    else {
+        // ok
+    } else {
         printf("Erro ao ler input");
     }
 
-    (void)write(sockfd, user_input, MAXLINE+1);
+    (void)Write(sockfd, user_input, MAXLINE + 1);
 
-    close(sockfd);
+    n = Read(sockfd, server_response, MAXLINE);
+    if (n > 0) {
+        fputs(server_response, stdout);
+        fflush(stdout);
+    }
+
+    Close(sockfd);
     return 0;
 }

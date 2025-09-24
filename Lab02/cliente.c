@@ -14,6 +14,9 @@
 
 #define MAXLINE 4096
 
+int Close(int fd) {
+    return close(fd);
+}
 int Socket(int domain, int type, int protocol) {
     int sockfd;
     if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
@@ -22,7 +25,7 @@ int Socket(int domain, int type, int protocol) {
     }
     return sockfd;
 }
-int Connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen) {
+void Connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen) {
     if (connect(sockfd, addr, addrlen) < 0) {
         perror("connect error");
         Close(sockfd);
@@ -50,16 +53,12 @@ ssize_t Read(int fd, void *buf, size_t count) {
 ssize_t Write(int fd, const void *buf, size_t count) {
     return write(fd, buf, count);
 }
-int Close(int fd) {
-    return close(fd);
-}
-
 static inline void addr_to_ip_port(const struct sockaddr_in *sa, char *ip, size_t iplen, unsigned short *port) {
     inet_ntop(AF_INET, &sa->sin_addr, ip, iplen);
     *port = ntohs(sa->sin_port);
 }
 
-int read_input(char *buf) {
+void read_input(char *buf) {
     printf("Lendo input do usuario...\n");
     if (fgets(buf, MAXLINE + 1, stdin) != NULL) {
         // ok
@@ -74,28 +73,11 @@ int main(int argc, char **argv) {
     struct sockaddr_in servaddr;
 
     // IP/PORT (argumentos ou server.info)
-    char ip[INET_ADDRSTRLEN] = "127.0.0.1";
+    char ip[INET_ADDRSTRLEN];
     unsigned short port = 0;
 
     if (argc >= 2) strncpy(ip, argv[1], sizeof(ip)-1);
     if (argc >= 3) port = (unsigned short)atoi(argv[2]);
-
-    if (port == 0) {
-        FILE *f = fopen("server.info", "r");
-        if (f) {
-            char line[128]; int got_p = 0;
-            while (fgets(line, sizeof(line), f)) {
-                (void)sscanf(line, "IP=%127s", ip);        // lê IP se houver, sem flag
-                if (sscanf(line, "PORT=%hu", &port) == 1) got_p = 1;
-            }
-            fclose(f);
-            if (!got_p) port = 0;
-        }
-        if (port == 0) {
-            fprintf(stderr, "Uso: %s <IP> [PORT] (ou forneça server.info)\n", argv[0]);
-            return 1;
-        }
-    }
 
     // socket
     sockfd = Socket(AF_INET, SOCK_STREAM, 0);
@@ -121,21 +103,20 @@ int main(int argc, char **argv) {
         inet_ntop(AF_INET, &(localaddr.sin_addr), localip, sizeof(localip));
         localport = ntohs(localaddr.sin_port);
 
-        printf("remote: %s:%hu\n", localip, localport);
+        printf("local IP/port: %s:%hu\n", localip, localport);
+        printf("remote IP/port: %s:%hu\n", ip, port);
     }
-
-    // lê e imprime o banner (uma leitura basta neste cenário)
+    
     char server_response[MAXLINE + 1];
-    ssize_t n = Read(sockfd, server_response, MAXLINE);
 
     // lê o input do usuário
-    char user_input[MAXLINE + 1];
-    read_input(user_input);
+    char *http_request = "GET / HTTP/1.0\r\n"
+                            "Host: teste\r\n"
+                            "\r\n";
 
-    (void)Write(sockfd, user_input, MAXLINE + 1);
+    (void)Write(sockfd, http_request, MAXLINE + 1);
 
-    n = Read(sockfd, server_response, MAXLINE);
-    
+    Read(sockfd, server_response, MAXLINE);
 
     Close(sockfd);
     return 0;

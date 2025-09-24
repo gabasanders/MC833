@@ -81,12 +81,6 @@ void doit(int connfd) {
         printf("local: %s:%hu\n",remoteip, remoteport);
     }
 
-    // envia banner "Hello + Time"
-    char buf[MAXDATASIZE];
-    time_t ticks = time(NULL); // ctime() já inclui '\n'
-    snprintf(buf, sizeof(buf), "Hello from server!\nTime: %.24s\r\n", ctime(&ticks));
-    (void)Write(connfd, buf, strlen(buf));
-
     // lê o input vindo do cliente
     char client_input[MAXLINE + 1];
     Read(connfd, client_input, MAXLINE);

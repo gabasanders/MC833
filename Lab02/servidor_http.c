@@ -13,9 +13,7 @@
 #define MAXDATASIZE  256
 #define MAXLINE      4096
 
-/* Wrappers (sem inline). 
-   Mantêm assinaturas equivalentes e comportamento.
-   Pequena conveniência: Read() sempre deixa o buffer terminado em '\0'. */
+// Wrappers
 int Socket(int domain, int type, int protocol) {
     int listenfd;
     if ((listenfd = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
@@ -52,7 +50,7 @@ int Getpeername(int sockfd, struct sockaddr *addr, socklen_t *addrlen) {
 }
 ssize_t Read(int fd, void *buf, size_t count) {
     ssize_t n = read(fd, buf, count);
-    /* Conveniência: garanta terminação para uso com "%s" */
+
     if (buf && count > 0) {
         if (n >= 0 && (size_t)n < count) {
             ((char*)buf)[n] = '\0';
@@ -60,7 +58,7 @@ ssize_t Read(int fd, void *buf, size_t count) {
             ((char*)buf)[count - 1] = '\0';
         }
     }
-
+    // Imprime mensagem recebida
     printf("[CLI MSG] %s", (char*)buf);
     return n;
 }
@@ -90,6 +88,7 @@ void doit(int connfd) {
     if (strncmp(client_input, "GET / HTTP/1.0", 14) == 0 ||
         strncmp(client_input, "GET / HTTP/1.1", 14) == 0) {
 
+        // Resposta em caso positivo
         response =
             "HTTP/1.0 200 OK\r\n"
             "Content-Type: text/html\r\n"
@@ -148,9 +147,10 @@ int main(int argc, char *argv[]) {
             continue; // segue escutando
         }
 
+        //cria processo filho
         if ((pid = fork()) == 0) {
             Close(listenfd);
-            //doit
+            //doit -> executa processamento
             doit(connfd);
         }
 

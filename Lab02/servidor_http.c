@@ -2,12 +2,15 @@
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <sys/types.h>
+#include <sys/wait.h>
 #include <unistd.h>
 #include <time.h>
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <errno.h>
+#include <signal.h>
+#include <errno.h>       // errno, EINTR
 
 #define LISTENQ      10
 #define MAXDATASIZE  256
@@ -33,7 +36,7 @@ void Bind(int sockfd, const struct sockaddr *addr, socklen_t addrlen) {
     }
 }
 void Listen(int sockfd, int backlog) {
-    if (listen(sockfd, LISTENQ) == -1) {
+    if (listen(sockfd, backlog) == -1) {
         perror("listen");
         Close(sockfd);
         exit(1);
@@ -66,7 +69,42 @@ ssize_t Write(int fd, const void *buf, size_t count) {
     return write(fd, buf, count);
 }
 
-void doit(int connfd) {
+typedef void Sigfunc(int);
+Sigfunc * Signal (int signo, Sigfunc *func)
+{
+    struct sigaction act, oact;
+    act.sa_handler = func;
+    sigemptyset (&act.sa_mask); /* Outros sinais não são bloqueados*/
+    act.sa_flags = 0;
+    if (signo == SIGALRM) { /* Para reiniciar chamadas interrompidas */
+#ifdef SA_INTERRUPT
+        act.sa_flags |= SA_INTERRUPT; /* SunOS 4.x */
+#endif
+    } else {
+#ifdef SA_RESTART
+        act.sa_flags |= SA_RESTART; /* SVR4, 4.4BSD */
+#endif
+    }
+    if (sigaction (signo, &act, &oact) < 0)
+        return (SIG_ERR);
+    return (oact.sa_handler);
+}
+
+void sig_chld(int signo) {
+    pid_t pid;
+    int stat;
+    while ( (pid = waitpid(-1, &stat, WNOHANG)) > 0)
+        printf("child %d terminated\n", pid);
+    return;
+}
+
+void err_sys(const char *msg) {
+    fprintf(stderr, "%s: %s\n", msg, strerror(errno));
+    exit(EXIT_FAILURE);
+}
+
+
+void doit(int connfd, int tempo_sleep) {
     struct sockaddr_in remoteaddr;
     socklen_t len = sizeof(remoteaddr);
     if (Getpeername(connfd, (struct sockaddr *)&remoteaddr, &len) == 0){
@@ -101,6 +139,7 @@ void doit(int connfd) {
     }
 
     (void)Write(connfd, response, strlen(response));
+    sleep(tempo_sleep);
     Close(connfd);
     exit(0);
 }
@@ -116,9 +155,20 @@ int main(int argc, char *argv[]) {
     memset(&servaddr, 0, sizeof(servaddr));
     servaddr.sin_family      = AF_INET;
     servaddr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    int backlog = LISTENQ;
+    int tempo_sleep = 0;
 
     if (argc > 1){
         int selected_port = atoi(argv[1]);
+
+        if (argc > 2 ) {
+            backlog = atoi(argv[2]);
+        }
+
+        if (argc > 3 ) {
+            tempo_sleep = atoi(argv[3]);
+        }
+
         servaddr.sin_port = htons(selected_port);
     }else{
         servaddr.sin_port = 0;              
@@ -137,11 +187,19 @@ int main(int argc, char *argv[]) {
     }
 
     // listen
-    Listen(listenfd, LISTENQ);
+    Listen(listenfd, backlog);
 
+    // receber sinal dos filhos
+    Signal (SIGCHLD, sig_chld);
     // laço: aceita clientes, envia banner e fecha a conexão do cliente
     for (;;) {
-        connfd = Accept(listenfd, NULL, NULL);
+        if ( (connfd = accept (listenfd, NULL, NULL)) < 0) {
+            if (errno == EINTR)
+                continue; /* se for tratar o sinal,quando voltar dá erro em funções lentas */
+            else
+                err_sys("accept error");
+        }
+
         if (connfd == -1) {
             perror("accept");
             continue; // segue escutando
@@ -151,7 +209,7 @@ int main(int argc, char *argv[]) {
         if ((pid = fork()) == 0) {
             Close(listenfd);
             //doit -> executa processamento
-            doit(connfd);
+            doit(connfd, tempo_sleep);
         }
 
         Close(connfd); // fecha só a conexão aceita; servidor segue escutando

@@ -118,6 +118,8 @@ int main(int argc, char **argv) {
 
     Read(sockfd, server_response, MAXLINE);
 
+    sleep(5);
+
     Close(sockfd);
     return 0;
 }

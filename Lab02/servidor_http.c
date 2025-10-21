@@ -187,12 +187,15 @@ int main(int argc, char *argv[]) {
     }
 
     // listen
+    
+    printf("BACKLOG: %d", backlog);
     Listen(listenfd, backlog);
 
     // receber sinal dos filhos
     Signal (SIGCHLD, sig_chld);
     // laço: aceita clientes, envia banner e fecha a conexão do cliente
     for (;;) {
+        sleep(3);
         if ( (connfd = accept (listenfd, NULL, NULL)) < 0) {
             if (errno == EINTR)
                 continue; /* se for tratar o sinal,quando voltar dá erro em funções lentas */

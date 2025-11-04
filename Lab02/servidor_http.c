@@ -235,8 +235,6 @@ int main(int argc, char *argv[]) {
 
             connections[num_connections] = connfd;
             num_connections++;
-
-            // doit(connfd, tempo_sleep);
         }
 
     

@@ -201,22 +201,26 @@ int main(int argc, char *argv[]) {
     // laço: aceita clientes, envia banner e fecha a conexão do cliente
 
     fd_set rset;
-
-    int connections[256];
-    int num_connections = 0;
+    int MAX_CONNECTIONS = 256;
+    // vai aceitar 256 conexoes simultaneas. 0 indica conexao vazia, 1 conexao ativa
+    int connection_active[256];
+    for (int i = 0; i < MAX_CONNECTIONS; i++) {
+        connection_active[i] = 0;
+    }
 
     FD_ZERO(&rset);
     for (;;) {
         FD_SET(listenfd, &rset);
         
-        for (int i = 0; i < num_connections; i++) {
-            FD_SET(connections[i], &rset);
+        for (int i = 0; i < MAX_CONNECTIONS; i++) {
+            if (connection_active[i] == 1)
+                FD_SET(i, &rset);
         }
 
         int maxfdp1 = listenfd;
 
-        for (int i = 0; i < num_connections; i++) {
-            maxfdp1 = max(maxfdp1, connections[i]);
+        for (int i = 0; i < MAX_CONNECTIONS; i++) {
+            maxfdp1 = max(maxfdp1, i);
         }
         maxfdp1 = maxfdp1 + 1;
 
@@ -232,15 +236,17 @@ int main(int argc, char *argv[]) {
                 perror("accept");
                 continue; // segue escutando
             }
-
-            connections[num_connections] = connfd;
-            num_connections++;
+            
+            if (connfd < MAX_CONNECTIONS)
+                connection_active[connfd] = 1;
         }
 
     
-        for (int i = 0; i < num_connections; i++) {
-            if (FD_ISSET(connections[i], &rset)) {
-                doit(connections[i], tempo_sleep);
+        for (int i = 0; i < MAX_CONNECTIONS; i++) {
+            if (connection_active[i] && FD_ISSET(i, &rset)) {
+                FD_CLR(i, &rset);
+                connection_active[i] = 0;
+                doit(i, tempo_sleep);
             }
         }
     }

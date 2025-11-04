@@ -11,11 +11,18 @@
 #include <errno.h>
 #include <signal.h>
 #include <errno.h>       // errno, EINTR
+#include <sys/select.h>   // FD_ZERO, FD_SET, FD_ISSET, select()
 
 #define LISTENQ      10
 #define MAXDATASIZE  256
 #define MAXLINE      4096
 
+
+int max(int a, int b) {
+    if (a > b)
+        return a;
+    return b;
+}
 // Wrappers
 int Socket(int domain, int type, int protocol) {
     int listenfd;
@@ -141,11 +148,9 @@ void doit(int connfd, int tempo_sleep) {
     (void)Write(connfd, response, strlen(response));
     sleep(tempo_sleep);
     Close(connfd);
-    exit(0);
 }
 
 int main(int argc, char *argv[]) {
-    pid_t pid;
     int listenfd, connfd;
     struct sockaddr_in servaddr;
 
@@ -194,28 +199,52 @@ int main(int argc, char *argv[]) {
     // receber sinal dos filhos
     Signal (SIGCHLD, sig_chld);
     // laço: aceita clientes, envia banner e fecha a conexão do cliente
+
+    fd_set rset;
+
+    int connections[256];
+    int num_connections = 0;
+
+    FD_ZERO(&rset);
     for (;;) {
-        sleep(3);
-        if ( (connfd = accept (listenfd, NULL, NULL)) < 0) {
-            if (errno == EINTR)
-                continue; /* se for tratar o sinal,quando voltar dá erro em funções lentas */
-            else
-                err_sys("accept error");
+        FD_SET(listenfd, &rset);
+        
+        for (int i = 0; i < num_connections; i++) {
+            FD_SET(connections[i], &rset);
         }
 
-        if (connfd == -1) {
-            perror("accept");
-            continue; // segue escutando
+        int maxfdp1 = listenfd;
+
+        for (int i = 0; i < num_connections; i++) {
+            maxfdp1 = max(maxfdp1, connections[i]);
+        }
+        maxfdp1 = maxfdp1 + 1;
+
+        if (FD_ISSET(listenfd, &rset)) {
+            if ( (connfd = accept (listenfd, NULL, NULL)) < 0) {
+                if (errno == EINTR)
+                    continue; /* se for tratar o sinal,quando voltar dá erro em funções lentas */
+                else
+                    err_sys("accept error");
+            }
+
+            if (connfd == -1) {
+                perror("accept");
+                continue; // segue escutando
+            }
+
+            connections[num_connections] = connfd;
+            num_connections++;
+
+            // doit(connfd, tempo_sleep);
         }
 
-        //cria processo filho
-        if ((pid = fork()) == 0) {
-            Close(listenfd);
-            //doit -> executa processamento
-            doit(connfd, tempo_sleep);
+    
+        for (int i = 0; i < num_connections; i++) {
+            if (FD_ISSET(connections[i], &rset)) {
+                doit(connections[i], tempo_sleep);
+            }
         }
-
-        Close(connfd); // fecha só a conexão aceita; servidor segue escutando
     }
 
     return 0;

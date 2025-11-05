@@ -12,6 +12,32 @@
 #include <signal.h>
 #include <errno.h>       // errno, EINTR
 #include <sys/select.h>   // FD_ZERO, FD_SET, FD_ISSET, select()
+#include <poll.h>
+
+// Optional: limits for OPEN_MAX (fallback if not defined elsewhere)
+#include <limits.h>
+
+// ---- Convenience / portability helpers ----
+
+// If you’re following Stevens’ UNP style, SA is often used for sockaddr:
+#ifndef SA
+#define SA struct sockaddr
+#endif
+
+// Some systems don’t define INFTIM; it’s standard as -1 for poll()
+#ifndef INFTIM
+#define INFTIM (-1)
+#endif
+
+// If OPEN_MAX isn’t defined, provide a sane default (matches your code’s 256)
+#ifndef OPEN_MAX
+#define OPEN_MAX 256
+#endif
+
+// If you used max() as a function, define a macro or inline helper:
+#ifndef MAX
+#define MAX(a,b) ((a) > (b) ? (a) : (b))
+#endif
 
 #define LISTENQ      10
 #define MAXDATASIZE  256
@@ -200,53 +226,46 @@ int main(int argc, char *argv[]) {
     Signal (SIGCHLD, sig_chld);
     // laço: aceita clientes, envia banner e fecha a conexão do cliente
 
-    fd_set rset;
-    int MAX_CONNECTIONS = 256;
-    // vai aceitar 256 conexoes simultaneas. 0 indica conexao vazia, 1 conexao ativa
-    int connection_active[256];
-    for (int i = 0; i < MAX_CONNECTIONS; i++) {
-        connection_active[i] = 0;
-    }
+    struct pollfd client[OPEN_MAX];
+    struct sockaddr_in cliaddr;
+    socklen_t clilen;
+    int i, sockfd;
+    client[0].fd = listenfd;
+    client[0].events = POLLRDNORM;
+    for (i = 1; i < OPEN_MAX; i++)
+        client[i].fd = -1; /* -1 indicates available entry */
+    int maxi = 0; /* max index into client[] array */
 
-    FD_ZERO(&rset);
     for (;;) {
-        FD_SET(listenfd, &rset);
-        
-        for (int i = 0; i < MAX_CONNECTIONS; i++) {
-            if (connection_active[i] == 1)
-                FD_SET(i, &rset);
-        }
-
-        int maxfdp1 = listenfd;
-
-        for (int i = 0; i < MAX_CONNECTIONS; i++) {
-            maxfdp1 = max(maxfdp1, i);
-        }
-        maxfdp1 = maxfdp1 + 1;
-
-        if (FD_ISSET(listenfd, &rset)) {
-            if ( (connfd = accept (listenfd, NULL, NULL)) < 0) {
-                if (errno == EINTR)
-                    continue; /* se for tratar o sinal,quando voltar dá erro em funções lentas */
-                else
-                    err_sys("accept error");
+        int nready = poll(client, maxi + 1, INFTIM);
+        if (client[0].revents & POLLRDNORM) { /* new client conn */
+            clilen = sizeof(cliaddr);
+            connfd = Accept(listenfd, (SA *) &cliaddr, &clilen);
+            for (i = 1; i < OPEN_MAX; i++)
+                if (client[i].fd < 0) {
+                    client[i].fd = connfd; /* save descriptor */
+                    break;
+                }
+            if (i == OPEN_MAX){
+                printf("too many clients\n");
             }
+            client[i].events = POLLRDNORM;
+            if (i > maxi)
+                maxi = i; /* max index in client[] array */
+            if (--nready <= 0)
+                continue; /* no more readable descriptors */
 
-            if (connfd == -1) {
-                perror("accept");
-                continue; // segue escutando
-            }
-            
-            if (connfd < MAX_CONNECTIONS)
-                connection_active[connfd] = 1;
-        }
+            for (i = 1; i <= maxi; i++) { /* check all clients for data */
+                if ( (sockfd = client[i].fd) < 0)
+                    continue;
 
-    
-        for (int i = 0; i < MAX_CONNECTIONS; i++) {
-            if (connection_active[i] && FD_ISSET(i, &rset)) {
-                FD_CLR(i, &rset);
-                connection_active[i] = 0;
-                doit(i, tempo_sleep);
+                if (client[i].revents & (POLLRDNORM | POLLERR)) {
+                    doit(sockfd, tempo_sleep);
+                    client[i].fd = -1;
+
+                    if (--nready <= 0)
+                        break; /* no more readable descriptors */
+                }
             }
         }
     }
